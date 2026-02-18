@@ -47,7 +47,7 @@ import sys
 # branch less equal: BLE r1 r2 lab
 # branch less than: BLT r1 r2 lab
 # branch not equal: BNE r1 r2 lab
-# jump to instruction in register: JR rs
+# jump to pc value in register: JR rs
 # stop program: HALT
 
 
@@ -92,7 +92,11 @@ special_registers = {
     "PC": 0,
     "labels": {}
 }
+
 program = []
+
+# initialise 256 address memory
+memory = [0 for _ in range(256)]
 
 def fetch(state: int) -> int:
     print("[DBG] Fetching")
@@ -154,6 +158,7 @@ def decode(state: int) -> int:
         case "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR":
             return 10
         case "HALT":
+            print(memory)
             print(registers)
             return 4
         case _:
@@ -197,15 +202,12 @@ def execute(state: int) -> int:
             registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) <= int(special_registers["IR"][3])
         case "LTH":
             registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) < int(special_registers["IR"][3])
-        case "MOVE" | "LI":
+        case "MOVE" | "LI" | "LA":
             registers[special_registers["IR"][1]] = int(special_registers["IR"][2])
-        #TODO: implement these
-        case "LA":
-            pass
         case "LW":
-            pass
+            registers[special_registers["IR"][1]] = memory[int(special_registers["IR"][2])]
         case "SW":
-            pass
+            memory[int(special_registers["IR"][2])] = special_registers["IR"][1]
         case "B":
             if special_registers["IR"][1] in special_registers["labels"].keys():
                 special_registers["PC"] = special_registers["labels"][special_registers["IR"][1]]
@@ -244,14 +246,13 @@ def execute(state: int) -> int:
         case "BNE":
             if special_registers["IR"][1] != special_registers["IR"][2]:
                 if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+                    # we -1 from the address because the pc will be incremented after the case statements
+                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]] - 1
                 else:
                     raise Exception(f"Label not found: {special_registers["IR"][3]}")
         case "JR":
-            if special_registers["IR"][1] in special_registers["labels"].keys():
-                special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
-            else:
-                raise Exception(f"Label not found: {special_registers["IR"][1]}")
+            # we -1 from the address because the pc will be incremented after the case statements
+            special_registers["PC"] = special_registers["IR"][1] - 1
     special_registers["PC"] += 1
     return 1
 

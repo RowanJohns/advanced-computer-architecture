@@ -1,0 +1,17 @@
+LI r0 5
+LI r4 3
+fact
+    SW r4 0
+    SW r2 1
+    LI r3 2
+    BLT r0 r3 done
+    MOVE r2 r0
+    SUBI r0 1
+    LI r4 11
+    B fact
+    MUL r1 r2 r3
+HALT
+done
+    LW r4 0
+    LW r2 1
+    JR r4
