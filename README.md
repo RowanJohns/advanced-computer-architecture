@@ -4,47 +4,41 @@ ACA mini project coursework 2026
 I'm calling this ChipGloss 👾💄👹
 
 Superscalar processor simulator complete with an instruction set
-
 # Instruction Set (based on MIPS)
 ### Arithmetic instructions 
-addition: ADD rd r1 r2\n
-immediate addition: ADDI rd r1 imm\n
-subtraction: SUB rd r1 r2\n
-immediate subtraction: SUBI rd r1 imm\n
-multiplication: MUL rd r1 r2\n
-division: DIV rd r1 r2\n
-
+- addition: ADD rd r1 r2
+- immediate addition: ADDI rd r1 imm
+- subtraction: SUB rd r1 r2
+- immediate subtraction: SUBI rd r1 imm
+- multiplication: MUL rd r1 r2
+- division: DIV rd r1 r2
 ### Logical instructions
-negation: NOT rd r1\n
-conjunction: AND rd r1 r2\n
-disjunction: OR rd r1 r2\n
-exclusive disjunction: XOR rd r1 r2\n
-
+- negation: NOT rd r1
+- conjunction: AND rd r1 r2
+- disjunction: OR rd r1 r2
+- exclusive disjunction: XOR rd r1 r2
 ### Comparison instructions
-equality: EQU rd r1 r2\n
-inequality: NEQ rd r1 r2\n
-greater or equal: GTE rd r1 r2\n
-greater than: GTH rd r1 r2\n
-less or equal: LTE rd r1 r2\n
-less than: LTH rd r1 r2\n
-
+- equality: EQU rd r1 r2
+- inequality: NEQ rd r1 r2
+- greater or equal: GTE rd r1 r2
+- greater than: GTH rd r1 r2
+- less or equal: LTE rd r1 r2
+- less than: LTH rd r1 r2
 ### Memory access instructions
-move from reg to reg: MOVE rd rs\n
-load immediate into register: LI rd imm\n
-load address into register: LA rd addr\n
-load word into register: LW rd addr\n
-store word from register: SW rs addr\n
-
+- move from reg to reg: MOVE rd rs
+- load immediate into register: LI rd imm
+- load address into register: LA rd addr
+- load word into register: LW rd addr
+- store word from register: SW rs addr
 ### Control flow instructions
-branch: B lab\n
-branch equal: BEQ r1 r2 lab\n
-branch greater equal: BGE r1 r2 lab\n
-branch greater than: BGT r1 r2 lab\n
-branch less equal: BLE r1 r2 lab\n
-branch less than: BLT r1 r2 lab\n
-branch not equal: BNE r1 r2 lab\n
-jump to pc value in register: JR rs\n
-stop program: HALT
-
+- branch: B lab\n
+- branch equal: BEQ r1 r2 lab\n
+- branch greater equal: BGE r1 r2 lab
+- branch greater than: BGT r1 r2 lab
+- branch less equal: BLE r1 r2 lab
+- branch less than: BLT r1 r2 lab
+- branch not equal: BNE r1 r2 lab
+- jump to pc value in register: JR rs
+- stop program: HALT
 ### Registers
-general purpose: r0 - r15 (16 total)\n
+- general purpose: r0 - r15 (16 total)
