@@ -55,6 +55,9 @@ import sys
 
 # general purpose: r0 - r15 (16 total)
 # special purpose: 
+# IR - instruction register 
+# PC - program counter 
+# labels - dictionary of labels and their addresses in the program
 
 
 # Program states:
