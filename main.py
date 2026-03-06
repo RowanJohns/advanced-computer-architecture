@@ -1,4 +1,5 @@
 import sys
+import asyncio
 
 # Instruction Set (based on MIPS)
 
@@ -35,6 +36,7 @@ import sys
 # load immediate into register: LI rd imm
 # load address into register: LA rd addr
 # load word into register: LW rd addr
+# load word at address rs+imm into register: LO rd rs imm
 # store word from register: SW rs addr
 
 
@@ -57,21 +59,14 @@ import sys
 # special purpose: 
 # IR - instruction register 
 # PC - program counter 
+# CYC - current cycle
 # labels - dictionary of labels and their addresses in the program
-
-
-# Program states:
-# 0 - startup
-# 1 - fetch instruction
-# 10 - fetch register values
-# 11 - fetch all but first register values (ignore destination register)
-# 2 - decode
-# 3 - execute
-# 4 - finish
+# state: 0 - HALT, 1 - running
 
 # used to determine if a line is a label
-instructions = ["ADD", "ADDI", "SUB", "SUBI", "MUL", "DIV", "NOT", "AND", "OR", "XOR", "EQU", "NEQ", "GTE", "GTH", "LTE", "LTH", "MOVE", "LI", "LA", "LW", "SW", "B", "BEQ", "BGE", "BGT", "BLE", "BLT", "BNE", "JR", "HALT"]
+instructions = ["ADD", "ADDI", "SUB", "SUBI", "MUL", "DIV", "NOT", "AND", "OR", "XOR", "EQU", "NEQ", "GTE", "GTH", "LTE", "LTH", "MOVE", "LI", "LA", "LW", "LO", "SW", "B", "BEQ", "BGE", "BGT", "BLE", "BLT", "BNE", "JR", "HALT"]
 
+# general purpose registers
 registers = {
     "r0": 0, 
     "r1": 0, 
@@ -90,177 +85,328 @@ registers = {
     "r14": 0, 
     "r15": 0
 }
+
+# special purpose registers
 special_registers = {
-    "IR": [],
     "PC": 0,
-    "labels": {}
+    "CYC": 0,
+    "labels": {},
+    "state": 1,
+    "exec_instructions": 0
 }
 
+# pipeline registers
+# f is fetch unit, contains 2 instructions per cycle
+# d is decode unit, contains 2 instructions per cycle
+# e1 is ALU 1, contains the result and destination of 1 instruction per cycle
+# e2 is ALU 2, contains the result and destination of 1 instruction per cycle
+# b is branch unit, contains -1 if the previous branch was untaken and 1 if it was taken
+# ls is load/store unit, contains contains the result and destination of 1 load or store per cycle 
+pipeline_registers = {"f": [0,0], "d": [0,0], "e1": 0, "e2": 0, "b": 0, "ls": 0}
+
+# the program will be stored in this array
 program = []
 
 # initialise 256 address memory
 memory = [0 for _ in range(256)]
 
-def fetch(state: int) -> int:
-    print("[DBG] Fetching")
-    match state:
-        case 1:
-            # fetch current instruction
+def print_metrics():
+    # Print all useful metrics at the end of execution
+    print("Execution finished, here are some key metrics:")
+    print(f"Number of cycles: {special_registers["CYC"]}")
+    print(f"Number of instructions executed: {special_registers["exec_instructions"]}")
+    print(f"Average instructions executed per cycle: {special_registers["exec_instructions"]/special_registers["CYC"]}")
+    print(f"Final general purpose register values: {registers}")
+    print(f"Final pipeline register values: {pipeline_registers}")
+    print(f"Final special register values: {special_registers}")
+
+def fetch():
+    # fetch 2 instructions per cycle
+    for i in range(2):
+        # Check whether the previous fetched was a branch or memory instruction, and if so, block until it is resolved (only one branch and load/store unit).
+        if i == 1:
+            match pipeline_registers["f"][0][0]:
+                case "B" | "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR" | "MOVE" | "LI" | "LA" | "LW" | "LO" | "SW":
+                    break
+        # If we have reached the end of the program, return
+        if special_registers["PC"] < len(program):
             # split the current instruction into its components
             instruction = program[special_registers["PC"]].split(" ")
-            # store the instruction in the instruction register
-            special_registers["IR"] = instruction
-            print("[DBG] Instruction: ", instruction)
-            return 2
-        case 10:
-            instruction = special_registers["IR"]
-            # fetch any register values
-            for part in instruction:
-                if part in registers.keys():
-                    instruction[instruction.index(part)] = registers[part]
-            special_registers["IR"] = instruction
-            print("[DBG] Instruction: ", instruction)
-            # at this point the instruction is ready to execute
-            return 3
-        case 11:
-            instruction = special_registers["IR"]
-            # fetch any register values except the destination register
-            for part in instruction:
-                if part in registers.keys():
-                    # check that this is not the destination register
-                    if instruction.index(part) != 1:
+        else:
+            return
+        match instruction[0]:
+            # fetch all but the first register value (first is the destination register)
+            case "ADD" | "ADDI" | "SUB" | "SUBI" | "MUL" | "DIV" | "NOT" | "AND" | "OR" | "XOR" | "EQU" | "NEQ" | "GTE" | "GTH" | "LTE" | "LTH" | "MOVE" | "LO":
+                # fetch any register values except the destination register
+                for part in instruction:
+                    if part in registers.keys():
+                        # check that this is not the destination register
+                        if instruction.index(part) != 1:
+                            instruction[instruction.index(part)] = registers[part]
+                pipeline_registers["f"][i] = instruction
+            # fetch all register values
+            case "SW" | "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR":
+                # fetch any register values
+                for part in instruction:
+                    if part in registers.keys():
                         instruction[instruction.index(part)] = registers[part]
-            special_registers["IR"] = instruction
-            print("[DBG] Instruction: ", instruction)
-            # at this point the instruction is ready to execute
-            return 3
+                pipeline_registers["f"][i] = instruction
+            case _:
+                # store the instruction in the instruction register
+                pipeline_registers["f"][i] = instruction
+        special_registers["PC"] += 1
+    print(f"End of fetch, PC: {special_registers["PC"]}")
+            
+            
 
 
-def decode(state: int) -> int:
-    print("[DBG] Decoding")
-    match (special_registers["IR"][0]):
-        # arithmetic opcodes
-        case "ADD" | "ADDI" | "SUB" | "SUBI" | "MUL" | "DIV":
-            return 11
-        # logical opcodes
-        case "NOT" | "AND" | "OR" | "XOR":
-            return 11
-        # comparison opcodes
-        case "EQU" | "NEQ" | "GTE" | "GTH" | "LTE" | "LTH":
-            return 11
-        # memory access opcodes
-        case "MOVE":
-            return 11
-        case "LI" | "LA" | "LW":
-            return 3
-        case "SW":
-            return 10
-        # control flow opcodes
-        case "B":
-            return 3
-        case "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR":
-            return 10
-        case "HALT":
-            print(memory)
-            print(registers)
-            return 4
-        case _:
-            print("[DBG] Found label, storing...")
-            special_registers["labels"].update({special_registers["IR"][0]: special_registers["PC"]})
-            special_registers["PC"] += 1
-            return 1
+def decode():
+    execute_state = [-1,-1]
+    for i in range(2):
+        if pipeline_registers["f"][i] != 0:
+            # move the instruction into the decode pipeline register
+            pipeline_registers["d"][i] = pipeline_registers["f"][i]
+            match (pipeline_registers["d"][i][0]):
+                # determine what to do next
+                case "HALT":
+                    print_metrics()
+                    special_registers["state"] = 0
+                    exit()
+                case "ADD" | "ADDI" | "SUB" | "SUBI" | "MUL" | "DIV" | "NOT" | "AND" | "OR" | "XOR" | "EQU" | "NEQ" | "GTE" | "GTH" | "LTE" | "LTH":  
+                    execute_state[i] = 0
+                case "B" | "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR":
+                    execute_state[i] = 1
+                case "MOVE" | "LI" | "LA" | "LW" | "LO" | "SW":
+                    execute_state[i] = 2
+    return execute_state
 
-def execute(state: int) -> int:
-    print(f"[DBG] Executing {special_registers["IR"]}")
-    match (special_registers["IR"][0]):
+def alu_1():
+    match (pipeline_registers["d"][0]):
+        # Store an array with [destination, value] into the execute pipeline register. These values will be written to their destinations in the writeback function.
         case "ADD":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) + int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) + int(pipeline_registers["d"][0][3])]
         case "ADDI":
-            registers[special_registers["IR"][1]] += int(special_registers["IR"][2])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], registers[pipeline_registers["d"][0][1]] + int(pipeline_registers["d"][0][2])]
         case "SUB":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) - int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) - int(pipeline_registers["d"][0][3])]
         case "SUBI":
-            registers[special_registers["IR"][1]] -= int(special_registers["IR"][2])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], registers[pipeline_registers["d"][0][1]] - int(pipeline_registers["d"][0][2])]
         case "MUL":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) * int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) * int(pipeline_registers["d"][0][3])]
         case "DIV":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) / int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) / int(pipeline_registers["d"][0][3])]
         case "NOT":
-            registers[special_registers["IR"][1]] = ~int(special_registers["IR"][2])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], ~int(pipeline_registers["d"][0][2])]
         case "AND":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) & int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) & int(pipeline_registers["d"][0][3])]
         case "OR":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) | int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) | int(pipeline_registers["d"][0][3])]
         case "XOR":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) ^ int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) ^ int(pipeline_registers["d"][0][3])]
         case "EQU":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) == int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) == int(pipeline_registers["d"][0][3])]
         case "NEQ":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) != int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) != int(pipeline_registers["d"][0][3])]
         case "GTE":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) >= int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) >= int(pipeline_registers["d"][0][3])]
         case "GTH":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) > int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) > int(pipeline_registers["d"][0][3])]
         case "LTE":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) <= int(special_registers["IR"][3])
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) <= int(pipeline_registers["d"][0][3])]
         case "LTH":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2]) < int(special_registers["IR"][3])
-        case "MOVE" | "LI" | "LA":
-            registers[special_registers["IR"][1]] = int(special_registers["IR"][2])
-        case "LW":
-            registers[special_registers["IR"][1]] = memory[int(special_registers["IR"][2])]
-        case "SW":
-            memory[int(special_registers["IR"][2])] = special_registers["IR"][1]
+            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) < int(pipeline_registers["d"][0][3])]
+    pipeline_registers["f"][0] = 0
+    special_registers["exec_instructions"] += 1
+
+def alu_2():
+    match (pipeline_registers["d"][1][0]):
+        # Store an array with [destination, value] into the execute pipeline register. These values will be written to their destinations in the writeback function.
+        case "ADD":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) + int(pipeline_registers["d"][1][3])]
+        case "ADDI":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], registers[pipeline_registers["d"][1][1]] + int(pipeline_registers["d"][1][2])]
+        case "SUB":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) - int(pipeline_registers["d"][3])]
+        case "SUBI":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], registers[pipeline_registers["d"][1][1]] - int(pipeline_registers["d"][2])]
+        case "MUL":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) * int(pipeline_registers["d"][3])]
+        case "DIV":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) / int(pipeline_registers["d"][3])]
+        case "NOT":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], ~int(pipeline_registers["d"][1][2])]
+        case "AND":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) & int(pipeline_registers["d"][1][3])]
+        case "OR":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) | int(pipeline_registers["d"][1][3])]
+        case "XOR":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) ^ int(pipeline_registers["d"][1][3])]
+        case "EQU":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) == int(pipeline_registers["d"][1][3])]
+        case "NEQ":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) != int(pipeline_registers["d"][1][3])]
+        case "GTE":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) >= int(pipeline_registers["d"][1][3])]
+        case "GTH":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) > int(pipeline_registers["d"][1][3])]
+        case "LTE":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) <= int(pipeline_registers["d"][1][3])]
+        case "LTH":
+            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) < int(pipeline_registers["d"][1][3])]
+    pipeline_registers["f"][1] = 0
+    special_registers["exec_instructions"] += 1
+
+def branch_unit(instruction_index):
+    # For branches, we do nothing in the writeback stage so we don't need to store destination and result
+    # Store -1 in branch pipeline register for any untaken branches and 1 for a taken branch
+    match pipeline_registers["d"][instruction_index][0]:
         case "B":
-            if special_registers["IR"][1] in special_registers["labels"].keys():
-                special_registers["PC"] = special_registers["labels"][special_registers["IR"][1]]
+            if pipeline_registers["d"][instruction_index][1] in special_registers["labels"].keys():
+                special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][1]]
+                pipeline_registers["b"] = 1
             else:
-                raise Exception(f"Label not found: {special_registers["IR"][1]}")
+                raise Exception(f"Label not found: {pipeline_registers["d"][instruction_index][1]}")
+            pipeline_registers["b"] = -1
         case "BEQ":
-            if special_registers["IR"][1] == special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+            if pipeline_registers["d"][instruction_index][1] == pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "BGE":
-            if special_registers["IR"][1] >= special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+            if pipeline_registers["d"][instruction_index][1] >= pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][instruction_index][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "BGT":
-            if special_registers["IR"][1] > special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+            if pipeline_registers["d"][instruction_index][1] > pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][instruction_index][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "BLE":
-            if special_registers["IR"][1] <= special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+            if pipeline_registers["d"][instruction_index][1] <= pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][instruction_index][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "BLT":
-            if special_registers["IR"][1] < special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]]
+            if pipeline_registers["d"][instruction_index][1] < pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "BNE":
-            if special_registers["IR"][1] != special_registers["IR"][2]:
-                if special_registers["IR"][3] in special_registers["labels"].keys():
-                    # we -1 from the address because the pc will be incremented after the case statements
-                    special_registers["PC"] = special_registers["labels"][special_registers["IR"][3]] - 1
+            if pipeline_registers["d"][instruction_index][1] != pipeline_registers["d"][instruction_index][2]:
+                if pipeline_registers["d"][instruction_index][3] in special_registers["labels"].keys():
+                    special_registers["PC"] = special_registers["labels"][pipeline_registers["d"][instruction_index][3]]
+                    pipeline_registers["b"] = 1
                 else:
-                    raise Exception(f"Label not found: {special_registers["IR"][3]}")
+                    raise Exception(f"Label not found: {pipeline_registers["d"][instruction_index][3]}")
+            else:
+                pipeline_registers["b"] = -1
         case "JR":
-            # we -1 from the address because the pc will be incremented after the case statements
-            special_registers["PC"] = special_registers["IR"][1] - 1
-    special_registers["PC"] += 1
-    return 1
+            special_registers["PC"] = pipeline_registers["d"][instruction_index][1]
+            pipeline_registers["b"] = 1
+    pipeline_registers["f"][instruction_index] = 0
+    special_registers["exec_instructions"] += 1
+
+def load_store_unit(instruction_index):
+    # Store an array with [destination, value] into the load/store pipeline register. These values will be written to their destinations in the writeback function.
+    match pipeline_registers["d"][instruction_index][0]:
+        case "MOVE" | "LI" | "LA":
+            pipeline_registers["ls"] = [pipeline_registers["d"][instruction_index][1], int(pipeline_registers["d"][instruction_index][2])]
+        case "LW":
+            pipeline_registers["ls"] = [pipeline_registers["d"][instruction_index][1], memory[int(pipeline_registers["d"][instruction_index][2])]]
+        case "LO":
+            pipeline_registers["ls"] = [pipeline_registers["d"][instruction_index][1], memory[int(pipeline_registers["d"][instruction_index][2])+pipeline_registers["d"][instruction_index][3]]]
+        case "SW":
+            pipeline_registers["ls"] = [int(pipeline_registers["d"][instruction_index][2]), pipeline_registers["d"][instruction_index][1]]
+    pipeline_registers["f"][instruction_index] = 0
+    special_registers["exec_instructions"] += 1
+
+def writeback():
+    # Check load/store register
+    if pipeline_registers["ls"] != 0:
+        # Check whether the destination is a register
+        if pipeline_registers["ls"][0] in registers.keys():
+            registers[pipeline_registers["ls"][0]] = pipeline_registers["ls"][1]
+            # reset load/store register
+            pipeline_registers["ls"] = 0
+        # Next check for a valid memory address
+        elif pipeline_registers["ls"][0] >= 0 and pipeline_registers["ls"][0] < 256:
+            memory[pipeline_registers["ls"][0]] = pipeline_registers["ls"][1]
+            # reset load/store register
+            pipeline_registers["ls"] = 0
+        # If the destination is neither of these, something has gone awry
+        else:
+            raise Exception(f"Writeback failed: invalid destination {pipeline_registers["ls"][0]} in {pipeline_registers["ls"]}")
+    # Check execution registers
+    for i in range(2):
+        # Check whether there is something to write back in the execution register
+        if pipeline_registers[f"e{i+1}"] != 0:
+            # ALU instructions can only have register destinations
+            if pipeline_registers[f"e{i+1}"][0] in registers.keys():
+                registers[pipeline_registers[f"e{i+1}"][0]] = pipeline_registers[f"e{i+1}"][1]
+                # reset execute register
+                pipeline_registers[f"e{i+1}"] = 0
+            else:
+                raise Exception(f"Writeback failed: invalid destination {pipeline_registers[f"e{i}"][0]} in {pipeline_registers[f"e{i}"]}")
+    pipeline_registers["d"] = [0,0]
+        
+def cycle():
+    fetch()
+    print(f"CYC[{special_registers["CYC"]}]: Tick 1, fetched {pipeline_registers["f"]}")
+    # execute states: 0 = ALU, 1 = Branch, 2 = Load/Store
+    execute_state = decode()
+    print(f"CYC[{special_registers["CYC"]}]: Tick 2, decoded {pipeline_registers["d"]}")
+    # send the first decoded instruction to the right execution unit
+    print(f"Execution state: {execute_state}")
+    match execute_state[0]:
+        case 0:
+            alu_1()
+        case 1:
+            branch_unit(0)
+        case 2:
+            load_store_unit(0)
+        case -1:
+            pass
+        case _:
+            raise Exception(f"Execute state {execute_state[0]} unrecognised.")
+    # and the second instruction
+    match execute_state[1]:
+        case 0:
+            alu_2()
+        case 1:
+            branch_unit(1)
+        case 2:
+            load_store_unit(1)
+        case -1:
+            pass
+        case _:
+            raise Exception(f"Execute state {execute_state[1]} unrecognised.")
+    print(f"CYC[{special_registers["CYC"]}]: Tick 3, execution registers e1:{pipeline_registers["e1"]}, e2:{pipeline_registers["e2"]}, b:{pipeline_registers["b"]}, ls:{pipeline_registers["ls"]}")
+    writeback()
+    print(f"CYC[{special_registers["CYC"]}]: Tick 4, writeback complete, registers state {registers}")
+    special_registers["CYC"] += 1
 
 def main():
-    state = 1
     # read the program in from argv and store it in the program array
     filename = sys.argv[1]
     try: 
@@ -282,19 +428,11 @@ def main():
                 special_registers["labels"].update({line:current_line})
         line = program_file.readline()
         current_line += 1
-    while (state != 4):
-        print(f"[DBG] Current state: {state}")
-        print(f"[DBG] Program Counter: {special_registers["PC"]}")
-        match state:
-            case 1 | 10 | 11:
-                state = fetch(state)
-            case 2:
-                state = decode(state)
-            case 3:
-                state = execute(state)
-            case _:
-                print("State unrecognised, terminating...")
-                break
-    print("[DBG] Finished program.")
+    print("\n",program,"\n")
+    print("---Starting program---")
+    # program loop
+    while (special_registers["state"] != 0):
+        cycle()
+    print("---Finished program---")
 
 main()
