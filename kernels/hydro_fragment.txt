@@ -1,0 +1,4 @@
+DO 1 L = 1,Loop
+DO 1 k = 1,n
+X(k)= Q + Y(k)*(R*ZX(k+10) + T*ZX(k+11))
+

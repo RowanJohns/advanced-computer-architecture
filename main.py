@@ -63,30 +63,88 @@ import asyncio
 # labels - dictionary of labels and their addresses in the program
 # state: 0 - HALT, 1 - running
 
-# used to determine if a line is a label
+# groups of instructions (for pattern matching)
 instructions = ["ADD", "ADDI", "SUB", "SUBI", "MUL", "DIV", "NOT", "AND", "OR", "XOR", "EQU", "NEQ", "GTE", "GTH", "LTE", "LTH", "MOVE", "LI", "LA", "LW", "LO", "SW", "B", "BEQ", "BGE", "BGT", "BLE", "BLT", "BNE", "JR", "HALT"]
+al_instructions = ["ADD", "ADDI", "SUB", "SUBI", "MUL", "DIV", "NOT", "AND", "OR", "XOR", "EQU", "NEQ", "GTE", "GTH", "LTE", "LTH"]
+fp_instructions = ["MUL", "DIV"]
+b_instructions = ["B", "BEQ", "BGE", "BGT", "BLE", "BLT", "BNE", "JR"]
+mem_instructions = ["MOVE", "LI", "LA", "LW", "LO", "SW"]
 
 # general purpose registers
+# layout: {"register name": [value, [res_station, index]]}
 registers = {
-    "r0": 0, 
-    "r1": 0, 
-    "r2": 0, 
-    "r3": 0, 
-    "r4": 0, 
-    "r5": 0, 
-    "r6": 0, 
-    "r7": 0, 
-    "r8": 0, 
-    "r9": 0, 
-    "r10": 0, 
-    "r11": 0, 
-    "r12": 0, 
-    "r13": 0, 
-    "r14": 0, 
-    "r15": 0
+    "r0": [0,0], 
+    "r1": [0,0], 
+    "r2": [0,0], 
+    "r3": [0,0], 
+    "r4": [0,0], 
+    "r5": [0,0], 
+    "r6": [0,0], 
+    "r7": [0,0], 
+    "r8": [0,0], 
+    "r9": [0,0], 
+    "r10": [0,0], 
+    "r11": [0,0], 
+    "r12": [0,0], 
+    "r13": [0,0], 
+    "r14": [0,0], 
+    "r15": [0,0]
 }
 
+# reservation stations
+# Op = opcode
+# Qj, Qk = the RS that will produce the relevant source operand (0 if they are in Vj/Vk)
+# Vj, Vk = the values of the source operands
+# A = memory address (load/store buffers only)
+# Busy = whether this RS is in use
+
+# reservation station 1
+rs1 = [
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+]
+
+# reservation station 2
+rs2 = [
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+]
+
+branch_buffer = [
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+]
+
+load_buffer = [
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0}
+]
+
+store_buffer = [
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0}
+]
+
+# common data bus
+# each entry will have a value and destination tag [val, tag]
+cdb = {"rs1": 0, "rs2": 0, "lb": 0, "sb": 0}
+
 # special purpose registers
+# PC = program counter, int
+# CYC = current cycle, int
+# labels = {label:PC}, dict
+# state = program state, int
+# exec_instructions = total instructions executed, int
 special_registers = {
     "PC": 0,
     "CYC": 0,
@@ -94,15 +152,6 @@ special_registers = {
     "state": 1,
     "exec_instructions": 0
 }
-
-# pipeline registers
-# f is fetch unit, contains 2 instructions per cycle
-# d is decode unit, contains 2 instructions per cycle
-# e1 is ALU 1, contains the result and destination of 1 instruction per cycle
-# e2 is ALU 2, contains the result and destination of 1 instruction per cycle
-# b is branch unit, contains -1 if the previous branch was untaken and 1 if it was taken
-# ls is load/store unit, contains contains the result and destination of 1 load or store per cycle 
-pipeline_registers = {"f": [0,0], "d": [0,0], "e1": 0, "e2": 0, "b": 0, "ls": 0}
 
 # the program will be stored in this array
 program = []
@@ -117,50 +166,67 @@ def print_metrics():
     print(f"Number of instructions executed: {special_registers["exec_instructions"]}")
     print(f"Average instructions executed per cycle: {special_registers["exec_instructions"]/special_registers["CYC"]}")
     print(f"Final general purpose register values: {registers}")
-    print(f"Final pipeline register values: {pipeline_registers}")
+    # print(f"Final pipeline register values: {pipeline_registers}")
     print(f"Final special register values: {special_registers}")
 
 def fetch():
-    # fetch 2 instructions per cycle
+    # fetch 2 instructions into the reservation stations per cycle
     for i in range(2):
-        # Check whether the previous fetched was a branch or memory instruction, and if so, block until it is resolved (only one branch and load/store unit).
-        if i == 1:
-            match pipeline_registers["f"][0][0]:
-                case "B" | "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR" | "MOVE" | "LI" | "LA" | "LW" | "LO" | "SW":
-                    break
-        # If we have reached the end of the program, return
+        # check if we have reached the end of the program
         if special_registers["PC"] < len(program):
-            # split the current instruction into its components
+            # get an instruction from the head of the instruction queue
             instruction = program[special_registers["PC"]].split(" ")
         else:
             return
-        match instruction[0]:
-            # fetch all but the first register value (first is the destination register)
-            case "ADD" | "ADDI" | "SUB" | "SUBI" | "MUL" | "DIV" | "NOT" | "AND" | "OR" | "XOR" | "EQU" | "NEQ" | "GTE" | "GTH" | "LTE" | "LTH" | "MOVE" | "LO":
-                # fetch any register values except the destination register
-                for part in instruction:
-                    if part in registers.keys():
-                        # check that this is not the destination register
-                        if instruction.index(part) != 1:
-                            instruction[instruction.index(part)] = registers[part]
-                pipeline_registers["f"][i] = instruction
-            # fetch all register values
-            case "SW" | "BEQ" | "BGE" | "BGT" | "BLE" | "BLT" | "BNE" | "JR":
-                # fetch any register values
-                for part in instruction:
-                    if part in registers.keys():
-                        instruction[instruction.index(part)] = registers[part]
-                pipeline_registers["f"][i] = instruction
-            case _:
-                # store the instruction in the instruction register
-                pipeline_registers["f"][i] = instruction
-        special_registers["PC"] += 1
-    print(f"End of fetch, PC: {special_registers["PC"]}")
-            
-            
+    # the type of opcode determines which reservation station to use
+    op = instruction[0]
+    if op in al_instructions:
+        reservation_station = rs1
+    elif op in fp_instructions:
+        reservation_station = rs2
+    elif op in b_instructions:
+        # TODO: think about how branches can be dealt with out of order
+        reservation_station = branch_buffer
+    elif op in mem_instructions:
+        address_unit(instruction)
+        return
+    elif op == "HALT":
+        special_registers["state"] = 0
+        return
+    else:
+        special_registers["labels"].update({op:special_registers["PC"]})
+        return
 
+    # generic reservation station population
 
+    # find a slot that is free
+    if 0 in [rs["busy"] for rs in reservation_station]:
+        target_index = [rs["busy"] for rs in reservation_station].index(0)
+        # update the register file with the rs that will update the destination register
+        registers[instruction[1]][1] = [f"{reservation_station}",target_index]
+        # put the values we have so far into the reservation station slot
+        reservation_station[target_index].update({"Op": op, "Busy": 1})
+        # find out whether any source registers are waiting for their value
+        for i in range(2,4):
+            if instruction[i] in registers.keys():
+                # if Qi is not 0, it is a list with [res_station, index] to tell us where the value will be produced
+                if registers[instruction[i]][1] != 0:
+                    # update Qj, Qk accordingly
+                    if i == 2:
+                        reservation_station[target_index].update({"Qj": registers[instruction[i]][1]})
+                    elif i == 3:
+                        reservation_station[target_index].update({"Qk": registers[instruction[i]][1]})
+                # if Qi is 0, we can safely use the value in that register
+                else:
+                    # update Vj, Vk accordingly
+                    if i == 2:
+                        reservation_station[target_index].update({"Vj": registers[instruction[i]][0]})
+                    elif i == 3:
+                        reservation_station[target_index].update({"Vk": registers[instruction[i]][0]})
+
+            
 def decode():
+    # TODO: rewrite this!!
     execute_state = [-1,-1]
     for i in range(2):
         if pipeline_registers["f"][i] != 0:
@@ -180,7 +246,9 @@ def decode():
                     execute_state[i] = 2
     return execute_state
 
-def alu_1():
+# add, sub and logical calculations
+def alu():
+    # TODO: remove pipeline register dependence here
     match (pipeline_registers["d"][0]):
         # Store an array with [destination, value] into the execute pipeline register. These values will be written to their destinations in the writeback function.
         case "ADD":
@@ -191,10 +259,6 @@ def alu_1():
             pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) - int(pipeline_registers["d"][0][3])]
         case "SUBI":
             pipeline_registers["e1"] = [pipeline_registers["d"][0][1], registers[pipeline_registers["d"][0][1]] - int(pipeline_registers["d"][0][2])]
-        case "MUL":
-            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) * int(pipeline_registers["d"][0][3])]
-        case "DIV":
-            pipeline_registers["e1"] = [pipeline_registers["d"][0][1], int(pipeline_registers["d"][0][2]) / int(pipeline_registers["d"][0][3])]
         case "NOT":
             pipeline_registers["e1"] = [pipeline_registers["d"][0][1], ~int(pipeline_registers["d"][0][2])]
         case "AND":
@@ -218,45 +282,20 @@ def alu_1():
     pipeline_registers["f"][0] = 0
     special_registers["exec_instructions"] += 1
 
-def alu_2():
+# mul and div calculations
+def alu_fp():
+    # TODO: remove pipeline register dependence here
     match (pipeline_registers["d"][1][0]):
         # Store an array with [destination, value] into the execute pipeline register. These values will be written to their destinations in the writeback function.
-        case "ADD":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) + int(pipeline_registers["d"][1][3])]
-        case "ADDI":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], registers[pipeline_registers["d"][1][1]] + int(pipeline_registers["d"][1][2])]
-        case "SUB":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) - int(pipeline_registers["d"][3])]
-        case "SUBI":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], registers[pipeline_registers["d"][1][1]] - int(pipeline_registers["d"][2])]
         case "MUL":
             pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) * int(pipeline_registers["d"][3])]
         case "DIV":
             pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) / int(pipeline_registers["d"][3])]
-        case "NOT":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], ~int(pipeline_registers["d"][1][2])]
-        case "AND":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) & int(pipeline_registers["d"][1][3])]
-        case "OR":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) | int(pipeline_registers["d"][1][3])]
-        case "XOR":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) ^ int(pipeline_registers["d"][1][3])]
-        case "EQU":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) == int(pipeline_registers["d"][1][3])]
-        case "NEQ":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) != int(pipeline_registers["d"][1][3])]
-        case "GTE":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) >= int(pipeline_registers["d"][1][3])]
-        case "GTH":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) > int(pipeline_registers["d"][1][3])]
-        case "LTE":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) <= int(pipeline_registers["d"][1][3])]
-        case "LTH":
-            pipeline_registers["e2"] = [pipeline_registers["d"][1][1], int(pipeline_registers["d"][1][2]) < int(pipeline_registers["d"][1][3])]
     pipeline_registers["f"][1] = 0
     special_registers["exec_instructions"] += 1
 
 def branch_unit(instruction_index):
+    # TODO: remove pipeline register dependence here
     # For branches, we do nothing in the writeback stage so we don't need to store destination and result
     # Store -1 in branch pipeline register for any untaken branches and 1 for a taken branch
     match pipeline_registers["d"][instruction_index][0]:
@@ -327,7 +366,13 @@ def branch_unit(instruction_index):
     pipeline_registers["f"][instruction_index] = 0
     special_registers["exec_instructions"] += 1
 
-def load_store_unit(instruction_index):
+def address_unit(instruction):
+    # TODO: split up instructions and put them in the load/store buffers
+    # put stuff into load/store buffers here
+    return
+
+def memory_unit(instruction_index):
+    # TODO: remove pipeline register dependence here
     # Store an array with [destination, value] into the load/store pipeline register. These values will be written to their destinations in the writeback function.
     match pipeline_registers["d"][instruction_index][0]:
         case "MOVE" | "LI" | "LA":
@@ -342,6 +387,7 @@ def load_store_unit(instruction_index):
     special_registers["exec_instructions"] += 1
 
 def writeback():
+    # TODO: remove pipeline register dependence here, implement CDB
     # Check load/store register
     if pipeline_registers["ls"] != 0:
         # Check whether the destination is a register
@@ -371,6 +417,7 @@ def writeback():
     pipeline_registers["d"] = [0,0]
         
 def cycle():
+    # TODO: match this with tomasulo flow chart
     fetch()
     print(f"CYC[{special_registers["CYC"]}]: Tick 1, fetched {pipeline_registers["f"]}")
     # execute states: 0 = ALU, 1 = Branch, 2 = Load/Store
