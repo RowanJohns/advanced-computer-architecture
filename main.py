@@ -71,24 +71,24 @@ b_instructions = ["B", "BEQ", "BGE", "BGT", "BLE", "BLT", "BNE", "JR"]
 mem_instructions = ["MOVE", "LI", "LA", "LW", "LO", "SW"]
 
 # general purpose registers
-# layout: {"register name": [value, [res_station, index]]}
+# layout: {"register name": [value, rob_index]}
 registers = {
-    "r0": [0,0], 
-    "r1": [0,0], 
-    "r2": [0,0], 
-    "r3": [0,0], 
-    "r4": [0,0], 
-    "r5": [0,0], 
-    "r6": [0,0], 
-    "r7": [0,0], 
-    "r8": [0,0], 
-    "r9": [0,0], 
-    "r10": [0,0], 
-    "r11": [0,0], 
-    "r12": [0,0], 
-    "r13": [0,0], 
-    "r14": [0,0], 
-    "r15": [0,0]
+    "r0": [0,4], 
+    "r1": [0,4], 
+    "r2": [0,4], 
+    "r3": [0,4], 
+    "r4": [0,4], 
+    "r5": [0,4], 
+    "r6": [0,4], 
+    "r7": [0,4], 
+    "r8": [0,4], 
+    "r9": [0,4], 
+    "r10": [0,4], 
+    "r11": [0,4], 
+    "r12": [0,4], 
+    "r13": [0,4], 
+    "r14": [0,4], 
+    "r15": [0,4]
 }
 
 # reservation stations
@@ -97,13 +97,15 @@ registers = {
 # Vj, Vk = the values of the source operands
 # A = memory address (load/store buffers only)
 # Busy = whether this RS is in use
+# list at the end is [head, tail] pointers
 
 # reservation station 1
 rs1 = [
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    [0,0]
 ]
 
 # reservation station 2
@@ -111,28 +113,37 @@ rs2 = [
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    [0,0]
 ]
 
 branch_buffer = [
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0}
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "Busy": 0},
+    [0,0]
 ]
 
 load_buffer = [
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
     {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0}
+    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
+    [0,0]
 ]
 
-store_buffer = [
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0},
-    {"Op": 0, "Qj": 0, "Qk": 0, "Vj": 0, "Vk": 0, "A": 0, "Busy": 0}
+# re-order buffer
+rob = [
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    {"Op": 0, "Dest": 0, "Value": 0, "Ready": 0},
+    [0,0]
 ]
 
 # common data bus
@@ -185,7 +196,7 @@ def fetch():
     elif op in fp_instructions:
         reservation_station = rs2
     elif op in b_instructions:
-        # TODO: think about how branches can be dealt with out of order
+        # TODO: think about how branches can be dealt with out of order (add delay)
         reservation_station = branch_buffer
     elif op in mem_instructions:
         address_unit(instruction)
@@ -200,30 +211,45 @@ def fetch():
     # generic reservation station population
 
     # find a slot that is free
-    if 0 in [rs["busy"] for rs in reservation_station]:
-        target_index = [rs["busy"] for rs in reservation_station].index(0)
-        # update the register file with the rs that will update the destination register
-        registers[instruction[1]][1] = [f"{reservation_station}",target_index]
+    if 0 in [rs["Busy"] for rs in reservation_station]:
+
+        rob_index = rob[8][1] # tail pointer
+        rs_index = reservation_station[4][1] # tail pointer
+
+        # update the register file with the rob entry that will update the destination register
+        registers[instruction[1]][1] = rob_index
+
+        # update the rob entry
+        rob[rob_index].update({"Op": op, "Dest": registers[instruction[1]][1]})
+
+        # increment the rob tail pointer
+        rob[8][1] = rob[8][1] + 1
+
         # put the values we have so far into the reservation station slot
-        reservation_station[target_index].update({"Op": op, "Busy": 1})
+        reservation_station[rs_index].update({"Op": op, "Busy": 1})
+
         # find out whether any source registers are waiting for their value
         for i in range(2,4):
+
             if instruction[i] in registers.keys():
-                # if Qi is not 0, it is a list with [res_station, index] to tell us where the value will be produced
-                if registers[instruction[i]][1] != 0:
+                # if Qi < 8, it is the rob index where the value will be produced
+                if registers[instruction[i]][1] < 8:
                     # update Qj, Qk accordingly
                     if i == 2:
-                        reservation_station[target_index].update({"Qj": registers[instruction[i]][1]})
+                        reservation_station[rs_index].update({"Qj": registers[instruction[i]][1]})
                     elif i == 3:
-                        reservation_station[target_index].update({"Qk": registers[instruction[i]][1]})
+                        reservation_station[rs_index].update({"Qk": registers[instruction[i]][1]})
+                
                 # if Qi is 0, we can safely use the value in that register
                 else:
                     # update Vj, Vk accordingly
                     if i == 2:
-                        reservation_station[target_index].update({"Vj": registers[instruction[i]][0]})
+                        reservation_station[rs_index].update({"Vj": registers[instruction[i]][0]})
                     elif i == 3:
-                        reservation_station[target_index].update({"Vk": registers[instruction[i]][0]})
+                        reservation_station[rs_index].update({"Vk": registers[instruction[i]][0]})
 
+        # increment the rs tail pointer
+        reservation_station[4][1] = reservation_station[4][1] + 1
             
 def decode():
     # TODO: rewrite this!!
@@ -367,8 +393,43 @@ def branch_unit(instruction_index):
     special_registers["exec_instructions"] += 1
 
 def address_unit(instruction):
-    # TODO: split up instructions and put them in the load/store buffers
-    # put stuff into load/store buffers here
+    # loads are sent to the load buffer and stores are sent to the ROB only
+    rob_index = rob[8][1]
+    lb_index = load_buffer[4][1]
+    op = instruction[0]
+    match op:
+        case "SW":
+            # send the store to the ROB to deal with during writeback
+            rob[rob_index].update({"Op": "SW", "Dest": instruction[1], "Value": instruction[2]})
+        case _:
+            # update the ROB
+            rob[rob_index].update({"Op": op, "Dest": instruction[1]})
+
+            # update the register file
+            registers[instruction[1]][1] = rob_index
+
+            # update the load buffer
+            load_buffer[lb_index].update({"Op": op, "Busy": 1})
+            if op == "LA" or op == "LW":
+                load_buffer[lb_index].update({"A": instruction[2]})
+
+            # find out whether any source registers are waiting for their value
+            if instruction[2] in registers.keys():
+                # if Qi < 8, it is the rob index where the value will be produced
+                if registers[instruction[i]][1] < 8:
+                    # update Qj accordingly
+                    load_buffer[lb_index].update({"Qj": registers[instruction[2]][1]})
+                
+                # if Qi is 0, we can safely use the value in that register
+                else:
+                    # update Vj accordingly
+                    if op == "LO":
+                        load_buffer[lb_index].update({"Vj": registers[instruction[2]][0] + instruction[3]})
+                    else:
+                        load_buffer[lb_index].update({"Vj": registers[instruction[2]][0]})
+
+    rob[8][1] = rob[8][1] + 1
+    load_buffer[4][1] = load_buffer[4][1] + 1
     return
 
 def memory_unit(instruction_index):
@@ -387,6 +448,8 @@ def memory_unit(instruction_index):
     special_registers["exec_instructions"] += 1
 
 def writeback():
+    # TODO: when the ROB has a register in the value field, replace it with the value only when that register doesn't have a ROB index attatched to it
+    # TODO: for LO, make sure to add imm when writing back to load buf
     # TODO: remove pipeline register dependence here, implement CDB
     # Check load/store register
     if pipeline_registers["ls"] != 0:
