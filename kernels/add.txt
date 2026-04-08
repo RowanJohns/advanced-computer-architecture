@@ -1,0 +1,6 @@
+LI r0 10
+LI r1 2
+ADD r2 r1 r0
+LI r2 70
+ADD r1 r2 r0
+HALT
